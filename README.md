@@ -113,4 +113,17 @@ This project taught me that technology isn't just about fancy features—it's ab
 
 ---
 
-*Built during the Monta Vista Web Dev Hackathon by a student who believes that when we learn together, we all succeed.*
+## 🚀 Live Demo
+
+The project is deployed and available online:
+
+👉 https://monta-vista-web-dev-hackathon-hyuz.vercel.app/
+
+You can explore the live version of the application, test all features, and see the latest updates in real time.
+
+---
+
+## 🛠 Deployment
+
+This project is deployed using **Vercel**, enabling fast CI/CD and automatic updates on every push to the main branch.
+
