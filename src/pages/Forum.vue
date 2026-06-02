@@ -1,35 +1,43 @@
-<script setup >
+<script setup>
 import QuestionCard from '@/components/QuestionCard.vue';
-import {ref , computed, onMounted} from 'vue';
-import { getQuestions, postQuestion } from "../services/forum.js";
+import { ref, computed, onMounted } from 'vue';
+import { getQuestions, postQuestion } from '../services/forum.js';
 
-//state data
+// State
 const questions = ref([]);
 const loading = ref(true);
 const pageError = ref(null);
 const searchTerm = ref('');
 const selectedTopic = ref('');
 
-const topics = ref(['Math', 'Science', 'History', 'Art', 'Computer Science']);
+const topics = ref([
+  'Math',
+  'Science',
+  'History',
+  'Art',
+  'Computer Science'
+]);
+
 const newQuestion = ref({
-    title: '',
-    author: '',
-    topic: '',
-    content: ''
-  ,
+  title: '',
+  author: '',
+  topic: '',
+  content: '',
   votes: 0,
-    answers: []
+  answers: []
 });
 
-//load questions with local error handling so failures don't crash the whole app
 async function loadQuestions() {
   loading.value = true;
   pageError.value = null;
+
   try {
-    questions.value = await getQuestions();
+    const data = await getQuestions();
+    questions.value = Array.isArray(data) ? data : [];
   } catch (err) {
-    // store a friendly message for the page instead of letting the error bubble
+    console.error('Error loading questions:', err);
     pageError.value = err?.message || 'Error loading questions';
+    questions.value = [];
   } finally {
     loading.value = false;
   }
@@ -37,20 +45,48 @@ async function loadQuestions() {
 
 onMounted(loadQuestions);
 
-//filtered questions
-const filteredQuestions = computed(()=>{
-    return questions.value.filter(q=>{
-        const matchesSearch = q.title.toLowerCase().includes(searchTerm.value.toLowerCase());
-        const matchesTopic = selectedTopic.value === "" || q.topic === selectedTopic.value;
-        return matchesSearch && matchesTopic;
-    });
+const filteredQuestions = computed(() => {
+  return (questions.value || []).filter((q) => {
+    const title = (q?.title || '').toLowerCase();
+
+    const matchesSearch = title.includes(
+      searchTerm.value.toLowerCase()
+    );
+
+    const matchesTopic =
+      selectedTopic.value === '' ||
+      q?.topic === selectedTopic.value;
+
+    return matchesSearch && matchesTopic;
+  });
 });
 
-//ask a question with error handling, update list locally when successful
 async function askQuestion() {
   try {
-    const created = await postQuestion(newQuestion.value);
-    questions.value.push(created);
+    // Basic client-side normalization (prevents posting empty payload)
+    const payload = {
+      title: (newQuestion.value.title || '').trim(),
+      author: (newQuestion.value.author || '').trim(),
+      topic: (newQuestion.value.topic || '').trim(),
+      content: (newQuestion.value.content || '').trim(),
+      votes: 0,
+      answers: []
+    };
+
+    if (!payload.title || !payload.author || !payload.topic || !payload.content) {
+      pageError.value = 'Please fill out title, author, topic, and content.';
+      return;
+    }
+
+    const created = await postQuestion(payload);
+
+    questions.value.push(
+      created || {
+        id: Date.now(),
+        ...payload
+      }
+    );
+
     newQuestion.value = {
       title: '',
       author: '',
@@ -59,175 +95,206 @@ async function askQuestion() {
       votes: 0,
       answers: []
     };
-    // If there was a page-level error earlier, refresh the list
-    if (pageError.value) await loadQuestions();
+
+    pageError.value = null;
   } catch (err) {
-    // Show friendly error on the page instead of crashing app
-    pageError.value = err?.message || 'Failed to post question';
+    console.error('Error posting question:', err);
+    pageError.value =
+      err?.message || 'Failed to post question';
   }
 }
-
-
-
 </script>
 
 <template>
-    <div class="forum">
-      <h1 class="title">Forum</h1>
-      <div v-if="loading" class="loading">Loading questions...</div>
-      <div v-else-if="pageError" class="page-error">
-      <p>{{ pageError }}</p>
-      <button class="btn btn-outline" @click="loadQuestions">Retry</button>
+  <main class="forum-page">
+    <header class="forum-header">
+      <h1>Forum</h1>
+      <p class="muted">Ask questions, share knowledge, and collaborate.</p>
+    </header>
+
+    <section class="forum-controls">
+      <div class="control">
+        <label class="label" for="search">Search</label>
+        <input
+          id="search"
+          v-model="searchTerm"
+          type="text"
+          class="input"
+          placeholder="Search by title..."
+        />
       </div>
-      <div v-else>
-        <div class="controls">
-            <input v-model="searchTerm" class="search" placeholder="Search questions..." />
-            <select v-model="selectedTopic" class="filter">
-                <option value="">All Topics</option>
-                <option v-for="t in topics" :key="t" :value="t">{{ t }}</option>
-            </select>
-        </div>
 
-        <!-- ask a question form -->
-        <form class="form" @submit.prevent="askQuestion">
-            <h2>ask a question</h2>
-            <input v-model="newQuestion.title" placeholder="Question title" required />
-                        <input v-model="newQuestion.author" placeholder="Your name " required />
-            <select v-model="newQuestion.topic" required>
-                <option disabled value="">Select Topic</option>
-                <option v-for="t in topics" :key="t" :value="t">{{ t }}</option>
-            </select>
-            <textarea v-model="newQuestion.content" placeholder="Question details" required></textarea>
-            <button type="submit" class="btn btn-primary">Post Question</button>
-      
-        </form>
+      <div class="control">
+        <label class="label" for="topic">Topic</label>
+        <select id="topic" v-model="selectedTopic" class="select">
+          <option value="">All topics</option>
+          <option v-for="t in topics" :key="t" :value="t">{{ t }}</option>
+        </select>
+      </div>
+    </section>
 
-        <!-- questions list -->
-        <div class="question-list">
-          <div v-for="q in filteredQuestions" :key="q.id">
-            <QuestionCard
-              :title="q.title"
-              :author="q.author"
-              :votes="q.votes"
-              
-            />
-            <div class="answers" v-if="q.answers && q.answers.length">
-              <h4>Answers</h4>
-              <ul>
-                <li v-for="a in q.answers" :key="a.id">
-                  <strong>{{ a.author }}:</strong> {{ a.text }}
-                </li>
-              </ul>
-            </div>
+    <section class="forum-questions">
+      <div v-if="loading" class="status">Loading questions...</div>
+      <div v-else-if="pageError" class="status status-error">{{ pageError }}</div>
+      <div v-else-if="filteredQuestions.length === 0" class="status">
+        No questions found.
+      </div>
+
+      <div v-else class="questions-list">
+        <QuestionCard
+          v-for="q in filteredQuestions"
+          :key="q.id || q._id || q.title"
+          :question="q"
+        />
+      </div>
+    </section>
+
+    <section class="forum-ask">
+      <h2>Ask a question</h2>
+
+      <form class="ask-form" @submit.prevent="askQuestion">
+        <div class="grid">
+          <div class="field">
+            <label class="label" for="title">Title</label>
+            <input id="title" v-model="newQuestion.title" class="input" required />
+          </div>
+
+          <div class="field">
+            <label class="label" for="author">Author</label>
+            <input id="author" v-model="newQuestion.author" class="input" required />
+          </div>
+
+          <div class="field">
+            <label class="label" for="topic2">Topic</label>
+            <select id="topic2" v-model="newQuestion.topic" class="select" required>
+              <option value="" disabled>Select a topic</option>
+              <option v-for="t in topics" :key="t" :value="t">{{ t }}</option>
+            </select>
           </div>
         </div>
+
+        <div class="field">
+          <label class="label" for="content">Content</label>
+          <textarea
+            id="content"
+            v-model="newQuestion.content"
+            class="textarea"
+            rows="6"
+            required
+          ></textarea>
         </div>
-      </div>
+
+        <button type="submit" class="btn btn-primary">Post Question</button>
+      </form>
+    </section>
+  </main>
 </template>
 
 <style scoped>
-.forum {
-  max-width: 1000px;
+.forum-page {
+  max-width: 1100px;
   margin: 0 auto;
-  padding: var(--spacing-lg);
+  padding: 24px;
 }
 
-.forum .title {
+.forum-header h1 {
+  margin: 0;
   font-size: 2rem;
-  margin-bottom: var(--spacing-md);
 }
 
-.loading, .page-error { text-align: center; margin: var(--spacing-lg) 0; }
+.muted {
+  color: rgba(255, 255, 255, 0.75);
+  margin-top: 6px;
+}
 
-.controls {
+.forum-controls {
   display: flex;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
-  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 18px 0;
 }
 
-.controls .search, .controls .filter {
+.control {
+  flex: 1;
+  min-width: 240px;
+}
+
+.label {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  border: 2px solid var(--color-border);
+  background: var(--color-neutral);
+  color: var(--color-text);
+  border-radius: var(--radius-lg);
   padding: 10px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  font-size: 0.95rem;
 }
 
-.form {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  padding: var(--spacing-lg);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-soft);
-  margin-bottom: var(--spacing-lg);
-  display: grid;
-  gap: var(--spacing-sm);
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
-.form h2 { margin: 0 0 var(--spacing-md) 0; }
-
-.form input, .form select, .form textarea { width: 100%; }
-
-.question-list {
-  display: grid;
-  gap: var(--spacing-lg);
-  margin-top: var(--spacing-md);
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  align-items: start;
-}
-
-/* style each card wrapper (works even if QuestionCard renders its own root element) */
-.question-list > * {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  padding: var(--spacing-md);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-soft);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+.questions-list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: 14px;
 }
 
-/* subtle lift on hover/focus for better affordance */
-.question-list > *:hover,
-.question-list > *:focus-within {
-  transform: translateY(-6px);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+.status {
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
 }
 
-/* small meta row inside cards (title/author/votes) */
-.question-list .meta {
+.status-error {
+  border-color: rgba(239, 68, 68, 0.5);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.forum-ask {
+  margin-top: 28px;
+}
+
+.ask-form {
+  margin-top: 12px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-muted);
-  font-size: 0.9rem;
+  flex-direction: column;
+  gap: 14px;
 }
 
-/* ensure long titles wrap nicely */
-.question-list .title {
-  font-weight: 600;
-  line-height: 1.25;
-  margin-bottom: 6px;
-  word-break: break-word;
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
-/* responsive adjustments */
-@media (max-width: 768px) {
-  .question-list {
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.textarea {
+  resize: vertical;
+}
+
+@media (max-width: 900px) {
+  .grid {
     grid-template-columns: 1fr;
-    gap: var(--spacing-md);
   }
-  .question-list > * {
-    padding: calc(var(--spacing-md) - 4px);
-  }
-}
-
-.page-error p { color: var(--color-error); margin-bottom: var(--spacing-sm); }
-
-@media (max-width: 768px) {
-  .controls { flex-direction: column; align-items: stretch; }
 }
 </style>
+
